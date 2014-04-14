@@ -91,7 +91,13 @@ public:
      * @return int
      */
     inline int getTimeoutForRead() {return _timeoutForRead;};
-        
+
+    /** Enable ssl support **/
+    static void enableSSLCaInfo(std::string info);
+
+    /** Disable ssl support **/
+    static void disableSSLCaInfo();
+
 private:
     CCHttpClient();
     virtual ~CCHttpClient();

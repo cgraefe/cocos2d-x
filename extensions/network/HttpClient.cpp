@@ -58,6 +58,8 @@ static CCHttpClient *s_pHttpClient = NULL; // pointer to singleton
 
 static char s_errorBuffer[CURL_ERROR_SIZE];
 
+static std::string s_sslCaInfo; // string path to CURL_CAINFO value
+
 typedef size_t (*write_callback)(void *ptr, size_t size, size_t nmemb, void *stream);
 
 // Callback function used by libcurl for collect response data
@@ -249,8 +251,16 @@ static bool configureCURL(CURL *handle)
     if (code != CURLE_OK) {
         return false;
     }
-    curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0L);
-    curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 2L);
+
+    // Enable host verification if ca info is available.
+    if (s_sslCaInfo.empty()) {
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 0L);
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 0L);
+    } else {
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYPEER, 1L);
+        curl_easy_setopt(handle, CURLOPT_SSL_VERIFYHOST, 2L);
+        curl_easy_setopt(handle, CURLOPT_CAINFO, s_sslCaInfo.c_str());
+    }
 
     // FIXED #3224: The subthread of CCHttpClient interrupts main thread if timeout comes.
     // Document is here: http://curl.haxx.se/libcurl/c/curl_easy_setopt.html#CURLOPTNOSIGNAL 
@@ -474,9 +484,9 @@ void CCHttpClient::send(CCHttpRequest* request)
 void CCHttpClient::dispatchResponseCallbacks(float delta)
 {
     // CCLog("CCHttpClient::dispatchResponseCallbacks is running");
-    
+
     CCHttpResponse* response = NULL;
-    
+
     pthread_mutex_lock(&s_responseQueueMutex);
     if (s_responseQueue->count())
     {
@@ -484,28 +494,38 @@ void CCHttpClient::dispatchResponseCallbacks(float delta)
         s_responseQueue->removeObjectAtIndex(0);
     }
     pthread_mutex_unlock(&s_responseQueueMutex);
-    
+
     if (response)
     {
         --s_asyncRequestCount;
-        
+
         CCHttpRequest *request = response->getHttpRequest();
         CCObject *pTarget = request->getTarget();
         SEL_HttpResponse pSelector = request->getSelector();
 
-        if (pTarget && pSelector) 
+        if (pTarget && pSelector)
         {
             (pTarget->*pSelector)(this, response);
         }
-        
+
         response->release();
     }
-    
-    if (0 == s_asyncRequestCount) 
+
+    if (0 == s_asyncRequestCount)
     {
         CCDirector::sharedDirector()->getScheduler()->pauseTarget(this);
     }
-    
+
+}
+
+void CCHttpClient::enableSSLCaInfo(std::string info)
+{
+    s_sslCaInfo = info;
+}
+
+void CCHttpClient::disableSSLCaInfo()
+{
+    s_sslCaInfo.clear();
 }
 
 NS_CC_EXT_END
